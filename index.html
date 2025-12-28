@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Labirinto - Frutas e Runas</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <canvas id="canvas"></canvas>
+    
+    <div id="screen-flash"></div>
+    <div id="status-overlay"></div>
+
+    <div id="ui-layer">
+        
+        <div class="header-row">
+            <h1>Labirinto Rúnico</h1>
+            <button id="toggleUI" class="icon-btn">▼</button>
+        </div>
+
+        <div class="level-badge">
+            🏆 Nível <span id="levelValor">1</span>
+        </div>
+
+        <div class="fruit-badge" id="fruitBadge">
+            🍎 <span id="frutasColetadas">0</span> / <span id="frutasTotal">0</span>
+        </div>
+
+        <div id="ui-content">
+            
+            <div class="control-group">
+                <label>Tamanho Inicial: <span id="tamanhoValor">15</span></label>
+                <input type="range" id="tamanho" min="9" max="51" value="15" step="2">
+            </div>
+
+            <label class="switch-container">
+                <input type="checkbox" id="zoomToggle">
+                <span>Modo Lupa (Zoom) 🔍</span>
+            </label>
+
+            <div class="buttons-grid">
+                <button id="gerar">🎲 Reiniciar Jogo</button>
+                <button id="solveAI">🤖 IA Coletora</button>
+                <button id="btnFullscreen">📺 Tela Cheia</button>
+            </div>
+
+            <div class="d-pad">
+                <div></div> <button id="up" class="d-btn">▲</button>
+                <div></div> <button id="left" class="d-btn">◀</button>
+                <button id="down" class="d-btn">▼</button>
+                <button id="right" class="d-btn">▶</button>
+            </div>
+
+            <div class="credits">
+                <b>Legenda:</b><br>
+                <span style="color:#facc15">●</span> Frutas (Obrigatório)<br>
+                <span style="color:#a855f7">●</span> Teleporte Seguro<br>
+                <span style="color:#ef4444">●</span> Caos Seguro<br>
+                <span style="color:#22c55e">●</span> Inversão<br>
+                Dev: <a href="https://github.com/DevJaum" target="_blank">DevJaum</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

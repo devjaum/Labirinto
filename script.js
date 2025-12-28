@@ -123,7 +123,7 @@ class Labirinto {
         this.nivel++;
         
         let proximoTamanho = this.tamanho + 2;
-        if (proximoTamanho > 51) proximoTamanho = 51;
+        if (proximoTamanho > 200) proximoTamanho = 200;
 
         this.mostrarMensagem(`NÍVEL ${this.nivel}`, "#f59e0b");
 

@@ -43,3 +43,8 @@ HTML5 Canvas · CSS3 · JavaScript
 
 ## 👨‍💻 Sobre
 Projeto de estudo em algoritmos e desenvolvimento de jogos web.
+
+---
+
+## OBSERVAÇÂO
+As imagens da fruta e das runas foram criadas pelo GEMINI.

@@ -26,17 +26,24 @@ class Labirinto {
         this.animacaoIA = null;
         this.controlesInvertidos = false;
         this.timerInversao = null;
+        this.emTransicao = false;
         
         this.larguraLogica = 0;
         this.alturaLogica = 0;
+
+        this.camera = { x: 0, y: 0 };
+        this.targetCamera = { x: 0, y: 0 };
+        this.animationFrameId = null;
 
         this.init();
     }
 
     init() {
         if (this.animacaoIA) clearInterval(this.animacaoIA);
+        if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
         
         this.controlesInvertidos = false;
+        this.emTransicao = false;
         clearTimeout(this.timerInversao);
         this.mostrarMensagem("", "transparent");
 
@@ -70,7 +77,36 @@ class Labirinto {
         this.criarFrutas(Math.floor(this.tamanho / 3) + this.nivel);
 
         this.atualizarUI();
+        
+        this.loopRender();
+    }
+
+    loopRender() {
+        this.updateCamera();
         this.desenhar();
+        this.animationFrameId = requestAnimationFrame(() => this.loopRender());
+    }
+
+    updateCamera() {
+        const zoomAtivo = document.getElementById('zoomToggle').checked;
+        let cellSize;
+
+        if (zoomAtivo) {
+            cellSize = this.alturaLogica / 15;
+            this.targetCamera.x = (this.larguraLogica / 2) - (this.player.x * cellSize) - (cellSize / 2);
+            this.targetCamera.y = (this.alturaLogica / 2) - (this.player.y * cellSize) - (cellSize / 2);
+        } else {
+            let menorLado = Math.min(this.larguraLogica, this.alturaLogica);
+            cellSize = (menorLado - 60) / this.tamanho;
+            this.targetCamera.x = (this.larguraLogica - (this.tamanho * cellSize)) / 2;
+            this.targetCamera.y = (this.alturaLogica - (this.tamanho * cellSize)) / 2;
+        }
+
+        this.camera.x += (this.targetCamera.x - this.camera.x) * 0.1;
+        this.camera.y += (this.targetCamera.y - this.camera.y) * 0.1;
+        
+        if (Math.abs(this.targetCamera.x - this.camera.x) < 0.5) this.camera.x = this.targetCamera.x;
+        if (Math.abs(this.targetCamera.y - this.camera.y) < 0.5) this.camera.y = this.targetCamera.y;
     }
 
     reiniciarTotal(novoTamanho) {
@@ -82,11 +118,29 @@ class Labirinto {
     }
 
     proximoNivel() {
+        if(this.emTransicao) return;
+        this.emTransicao = true;
         this.nivel++;
-        this.tamanho += 2;
-        if (this.tamanho > 51) this.tamanho = 51;
+        
+        let proximoTamanho = this.tamanho + 2;
+        if (proximoTamanho > 51) proximoTamanho = 51;
+
         this.mostrarMensagem(`NÍVEL ${this.nivel}`, "#f59e0b");
-        setTimeout(() => { this.init(); }, 1000);
+
+        let frame = 0;
+        const totalFrames = 30;
+        
+        const animacaoLoop = setInterval(() => {
+            frame++;
+            this.ctx.fillStyle = `rgba(15, 23, 42, ${frame/totalFrames})`;
+            this.ctx.fillRect(0,0,this.larguraLogica, this.alturaLogica);
+            
+            if (frame >= totalFrames) {
+                clearInterval(animacaoLoop);
+                this.tamanho = proximoTamanho;
+                this.init();
+            }
+        }, 16);
     }
 
     atualizarUI() {
@@ -125,6 +179,7 @@ class Labirinto {
         }
         return false;
     }
+
     verificarSegurancaTotal(px, py) {
         if (!this.caminhoExiste(px, py, this.goal.x, this.goal.y)) return false;
         for(let y=0; y<this.tamanho; y++) {
@@ -157,6 +212,7 @@ class Labirinto {
             if (!encontrou) stack.pop();
         }
     }
+
     criarCiclos(densidade) {
         for (let y = 1; y < this.tamanho - 1; y++) {
             for (let x = 1; x < this.tamanho - 1; x++) {
@@ -171,6 +227,7 @@ class Labirinto {
             }
         }
     }
+
     criarSalas(qtd) {
         for (let i = 0; i < qtd; i++) {
             let rx = Math.floor(Math.random() * (this.tamanho - 4)) + 2;
@@ -178,6 +235,7 @@ class Labirinto {
             for(let y=0; y<3; y++) for(let x=0; x<3; x++) if(this.grid[ry+y]) this.grid[ry+y][rx+x] = this.PATH;
         }
     }
+
     criarRunasVariadas(qtd) {
         let count = 0;
         const tipos = [this.RUNE_TELEPORT, this.RUNE_CHAOS, this.RUNE_INVERT];
@@ -194,6 +252,7 @@ class Labirinto {
             }
         }
     }
+
     criarFrutas(qtd) {
         this.frutasTotal = 0;
         this.frutasColetadas = 0;
@@ -217,6 +276,7 @@ class Labirinto {
 
     ativarRuna(cx, cy, tipo) {
         this.grid[cy][cx] = this.PATH;
+        
         if (tipo === this.RUNE_TELEPORT) {
             this.flashTela("#a855f7");
             this.mostrarMensagem("🔮 Teleporte Seguro!", "#a855f7");
@@ -235,30 +295,49 @@ class Labirinto {
                 }
             }
             if(!teleportado) this.mostrarMensagem("Falha no Teleporte", "#555");
+            
         } else if (tipo === this.RUNE_CHAOS) {
             this.flashTela("#ef4444");
-            this.mostrarMensagem("🧱 Caos Calculado!", "#ef4444");
+            this.mostrarMensagem("🧱 Reconstrução!", "#ef4444");
+            
+            let totalTiles = this.tamanho * this.tamanho;
+            let metaMudancas = Math.floor(totalTiles * 0.4); 
             let mudancas = 0;
             let tentativas = 0;
-            while(mudancas < 12 && tentativas < 150) {
+            let maxTentativas = metaMudancas * 10; 
+
+            while(mudancas < metaMudancas && tentativas < maxTentativas) {
                 tentativas++;
                 let rx = Math.floor(Math.random() * (this.tamanho - 2)) + 1;
                 let ry = Math.floor(Math.random() * (this.tamanho - 2)) + 1;
+                
                 if(Math.abs(rx - this.player.x) < 2 && Math.abs(ry - this.player.y) < 2) continue;
                 if(Math.abs(rx - this.goal.x) < 2 && Math.abs(ry - this.goal.y) < 2) continue;
                 if(this.grid[ry][rx] === this.FRUIT) continue;
+
                 if (this.grid[ry][rx] === this.WALL) {
-                    this.grid[ry][rx] = this.PATH;
-                    mudancas++;
+                    let criaQuadrado = false;
+                    let isPath = (dx, dy) => this.grid[ry+dy][rx+dx] !== this.WALL;
+                    
+                    if (isPath(-1, -1) && isPath(0, -1) && isPath(-1, 0)) criaQuadrado = true;
+                    if (isPath(1, -1) && isPath(0, -1) && isPath(1, 0)) criaQuadrado = true;
+                    if (isPath(-1, 1) && isPath(0, 1) && isPath(-1, 0)) criaQuadrado = true;
+                    if (isPath(1, 1) && isPath(0, 1) && isPath(1, 0)) criaQuadrado = true;
+
+                    if (!criaQuadrado) {
+                        this.grid[ry][rx] = this.PATH;
+                        mudancas++;
+                    }
                 } else if (this.grid[ry][rx] === this.PATH) {
                     this.grid[ry][rx] = this.WALL;
                     if (this.verificarSegurancaTotal(this.player.x, this.player.y)) {
                         mudancas++;
                     } else {
-                        this.grid[ry][rx] = this.PATH;
+                        this.grid[ry][rx] = this.PATH; 
                     }
                 }
             }
+            
         } else if (tipo === this.RUNE_INVERT) {
             this.flashTela("#22c55e");
             this.mostrarMensagem("🌀 Inversão!", "#22c55e");
@@ -267,13 +346,12 @@ class Labirinto {
             this.timerInversao = setTimeout(() => {
                 this.controlesInvertidos = false;
                 this.mostrarMensagem("Controles Normais", "#fff");
-                this.desenhar();
             }, 5000);
         }
-        this.desenhar();
     }
 
     moverJogador(dx, dy) {
+        if(this.emTransicao) return;
         if (this.controlesInvertidos) { dx = -dx; dy = -dy; }
         this.mover(dx, dy);
     }
@@ -293,7 +371,6 @@ class Labirinto {
                 } else if (celula >= 5) {
                     this.ativarRuna(nx, ny, celula);
                 }
-                this.desenhar();
                 this.checarVitoria();
             }
         }
@@ -301,7 +378,7 @@ class Labirinto {
     checarVitoria() {
         if (this.player.x === this.goal.x && this.player.y === this.goal.y) {
             if (this.frutasColetadas >= this.frutasTotal) {
-                setTimeout(() => { this.proximoNivel(); }, 200);
+                this.proximoNivel();
             } else {
                 this.mostrarMensagem(`Faltam ${this.frutasTotal - this.frutasColetadas} frutas!`, "#facc15");
             }
@@ -331,6 +408,8 @@ class Labirinto {
 
     resolverComIA() {
         if (this.animacaoIA) clearInterval(this.animacaoIA);
+        if (this.emTransicao) return;
+        
         let objetivos = [];
         for(let y=0; y<this.tamanho; y++) {
             for(let x=0; x<this.tamanho; x++) {
@@ -407,11 +486,27 @@ class Labirinto {
         if (this.animacaoIA) clearInterval(this.animacaoIA);
         let i = 0;
         this.animacaoIA = setInterval(() => {
-            if (i >= path.length) { clearInterval(this.animacaoIA); return; }
+            if (i >= path.length || this.emTransicao) { clearInterval(this.animacaoIA); return; }
+            
             let next = path[i];
+            
+            if (Math.abs(next.x - this.player.x) > 1 || Math.abs(next.y - this.player.y) > 1) {
+                console.log("IA: Teleporte detectado! Recalculando rota...");
+                clearInterval(this.animacaoIA);
+                this.resolverComIA(); 
+                return;
+            }
+
+            if (this.grid[next.y][next.x] === this.WALL) {
+                console.log("IA: Caminho bloqueado! Recalculando rota...");
+                clearInterval(this.animacaoIA);
+                this.resolverComIA();
+                return;
+            }
+
             this.mover(next.x - this.player.x, next.y - this.player.y);
             i++;
-        }, 40);
+        }, 60);
     }
 
     atualizarTamanhoTela() {
@@ -430,18 +525,17 @@ class Labirinto {
         this.ctx.fillRect(0, 0, this.larguraLogica, this.alturaLogica);
 
         const zoomAtivo = document.getElementById('zoomToggle').checked;
-        let cellSize, offsetX, offsetY;
+        let cellSize;
 
         if (zoomAtivo) {
             cellSize = this.alturaLogica / 15;
-            offsetX = (this.larguraLogica/2) - (this.player.x * cellSize) - (cellSize/2);
-            offsetY = (this.alturaLogica/2) - (this.player.y * cellSize) - (cellSize/2);
         } else {
             let menorLado = Math.min(this.larguraLogica, this.alturaLogica);
             cellSize = (menorLado - 60) / this.tamanho;
-            offsetX = (this.larguraLogica - (this.tamanho * cellSize)) / 2;
-            offsetY = (this.alturaLogica - (this.tamanho * cellSize)) / 2;
         }
+
+        let offsetX = this.camera.x;
+        let offsetY = this.camera.y;
 
         for (let y = 0; y < this.tamanho; y++) {
             for (let x = 0; x < this.tamanho; x++) {
@@ -458,7 +552,7 @@ class Labirinto {
 
                         if (this.rastro[y][x] > 0) {
                             let alpha = Math.min(this.rastro[y][x] * 0.2, 0.6);
-                            this.ctx.fillStyle = `rgba(56, 189, 248, ${alpha})`; 
+                            this.ctx.fillStyle = `rgba(56, 189, 248, ${alpha})`;
                             this.ctx.fillRect(dx, dy, cellSize, cellSize);
                         }
 
@@ -466,17 +560,14 @@ class Labirinto {
                             let size = cellSize * 0.4;
                             this.ctx.shadowBlur = 15;
                             this.ctx.shadowColor = "#ef4444";
-                            
                             this.ctx.fillStyle = "#ef4444";
                             this.ctx.beginPath();
                             this.ctx.arc(cx, cy + size*0.1, size, 0, Math.PI*2);
                             this.ctx.fill();
-
                             this.ctx.fillStyle = "rgba(255,255,255,0.4)";
                             this.ctx.beginPath();
                             this.ctx.arc(cx - size*0.3, cy - size*0.3, size*0.3, 0, Math.PI*2);
                             this.ctx.fill();
-
                             this.ctx.shadowBlur = 0;
                             this.ctx.fillStyle = "#4ade80";
                             this.ctx.beginPath();
@@ -497,10 +588,6 @@ class Labirinto {
                                 this.ctx.beginPath();
                                 this.ctx.arc(cx, cy, rSize*0.6, 0, Math.PI*2);
                                 this.ctx.stroke();
-                                this.ctx.fillStyle = "#a855f7";
-                                this.ctx.beginPath();
-                                this.ctx.arc(cx, cy, rSize*0.3, 0, Math.PI*2);
-                                this.ctx.fill();
                             } 
                             else if (val === this.RUNE_CHAOS) {
                                 this.ctx.shadowColor = "#f87171";
@@ -512,15 +599,6 @@ class Labirinto {
                                 this.ctx.lineTo(cx - rSize, cy);
                                 this.ctx.closePath();
                                 this.ctx.fill();
-
-                                this.ctx.strokeStyle = "#7f1d1d";
-                                this.ctx.lineWidth = 2;
-                                this.ctx.beginPath();
-                                this.ctx.moveTo(cx - rSize/2, cy - rSize/2);
-                                this.ctx.lineTo(cx + rSize/2, cy + rSize/2);
-                                this.ctx.moveTo(cx + rSize/2, cy - rSize/2);
-                                this.ctx.lineTo(cx - rSize/2, cy + rSize/2);
-                                this.ctx.stroke();
                             } 
                             else if (val === this.RUNE_INVERT) {
                                 this.ctx.shadowColor = "#4ade80";
@@ -528,19 +606,11 @@ class Labirinto {
                                 this.ctx.lineWidth = 4;
                                 this.ctx.lineCap = "round";
                                 this.ctx.beginPath();
-                                for(let i=0; i<10; i++) {
-                                    let angle = i * 0.5;
-                                    let dist = (i/10) * rSize;
-                                    let px = cx + Math.cos(angle)*dist;
-                                    let py = cy + Math.sin(angle)*dist;
-                                    if(i===0) this.ctx.moveTo(px, py);
-                                    else this.ctx.lineTo(px, py);
-                                }
+                                this.ctx.arc(cx, cy, rSize, 0, Math.PI*1.5);
                                 this.ctx.stroke();
                             }
                             this.ctx.shadowBlur = 0;
                         }
-
                         if (this.grid[y-1] && this.grid[y-1][x] === this.WALL) {
                             this.ctx.fillStyle = "rgba(0,0,0,0.5)";
                             this.ctx.fillRect(dx, dy, cellSize, cellSize * 0.3);
@@ -548,7 +618,6 @@ class Labirinto {
                     } else {
                         this.ctx.fillStyle = "#334155"; 
                         this.ctx.fillRect(dx, dy, cellSize+1, cellSize+1);
-                        
                         this.ctx.fillStyle = "#475569";
                         this.ctx.fillRect(dx, dy, cellSize, cellSize * 0.1);
                     }
@@ -564,7 +633,7 @@ class Labirinto {
             let r = size * 0.2;
             
             if (isGoal && this.frutasColetadas < this.frutasTotal) {
-                color = "#475569";
+                color = "#475569"; 
                 shadowColor = "transparent";
             }
 
@@ -591,17 +660,57 @@ class Labirinto {
             if (isGoal && this.frutasColetadas < this.frutasTotal) {
                 this.ctx.fillStyle = "#94a3b8";
                 this.ctx.fillRect(px + size*0.4, py + size*0.4, size*0.2, size*0.3);
-                this.ctx.beginPath();
-                this.ctx.arc(px + size*0.5, py + size*0.4, size*0.1, Math.PI, 0);
-                this.ctx.stroke();
             }
         };
 
         desenharQuadradoArredondado(this.goal.x, this.goal.y, "#10b981", "#34d399", true);
-        
         let corPlayer = this.controlesInvertidos ? "#f97316" : "#3b82f6";
         let shadowPlayer = this.controlesInvertidos ? "#fb923c" : "#60a5fa";
         desenharQuadradoArredondado(this.player.x, this.player.y, corPlayer, shadowPlayer);
+
+        if (zoomAtivo) {
+            this.desenharMinimapa();
+        }
+    }
+
+    desenharMinimapa() {
+        const mapSize = 150; 
+        const margin = 20;
+        const startX = this.larguraLogica - mapSize - margin;
+        const startY = margin;
+        
+        this.ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
+        this.ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+        this.ctx.lineWidth = 2;
+        this.ctx.fillRect(startX, startY, mapSize, mapSize);
+        this.ctx.strokeRect(startX, startY, mapSize, mapSize);
+
+        const miniCellSize = mapSize / this.tamanho;
+
+        for (let y = 0; y < this.tamanho; y++) {
+            for (let x = 0; x < this.tamanho; x++) {
+                let val = this.grid[y][x];
+                let px = startX + (x * miniCellSize);
+                let py = startY + (y * miniCellSize);
+
+                if (val === this.WALL) {
+                    this.ctx.fillStyle = "rgba(255, 255, 255, 0.1)"; 
+                    this.ctx.fillRect(px, py, miniCellSize, miniCellSize);
+                } else if (val === this.FRUIT) {
+                    this.ctx.fillStyle = "#ef4444"; 
+                    this.ctx.fillRect(px, py, miniCellSize, miniCellSize);
+                } else if (val === this.PATH && this.rastro[y][x] > 0) {
+                     this.ctx.fillStyle = "rgba(56, 189, 248, 0.3)";
+                     this.ctx.fillRect(px, py, miniCellSize, miniCellSize);
+                }
+            }
+        }
+
+        this.ctx.fillStyle = "#3b82f6"; 
+        this.ctx.fillRect(startX + (this.player.x * miniCellSize), startY + (this.player.y * miniCellSize), miniCellSize, miniCellSize);
+
+        this.ctx.fillStyle = "#10b981"; 
+        this.ctx.fillRect(startX + (this.goal.x * miniCellSize), startY + (this.goal.y * miniCellSize), miniCellSize, miniCellSize);
     }
 }
 
@@ -612,7 +721,9 @@ let jogo = new Labirinto(tamanhoInput.value);
 tamanhoInput.addEventListener('input', () => { tamanhoValor.innerText = tamanhoInput.value; });
 document.getElementById('gerar').addEventListener('click', () => { jogo.reiniciarTotal(tamanhoInput.value); document.getElementById('gerar').blur(); });
 document.getElementById('solveAI').addEventListener('click', () => { jogo.resolverComIA(); document.getElementById('solveAI').blur(); });
-document.getElementById('zoomToggle').addEventListener('change', () => { jogo.desenhar(); document.getElementById('zoomToggle').blur(); });
+document.getElementById('zoomToggle').addEventListener('change', () => {
+    document.getElementById('zoomToggle').blur();
+});
 document.getElementById('btnFullscreen').addEventListener('click', () => { if(!document.fullscreenElement) document.body.requestFullscreen(); else document.exitFullscreen(); });
 
 const toggleBtn = document.getElementById('toggleUI');
@@ -624,8 +735,8 @@ toggleBtn.addEventListener('click', () => {
     toggleBtn.blur();
 });
 
-window.addEventListener('resize', () => { jogo.atualizarTamanhoTela(); jogo.desenhar(); });
-document.addEventListener('fullscreenchange', () => { jogo.atualizarTamanhoTela(); jogo.desenhar(); });
+window.addEventListener('resize', () => { jogo.atualizarTamanhoTela(); });
+document.addEventListener('fullscreenchange', () => { jogo.atualizarTamanhoTela(); }); 
 
 document.addEventListener('keydown', (e) => {
     switch(e.key) {

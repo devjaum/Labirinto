@@ -231,7 +231,3 @@ button:active { transform: scale(0.96); }
 
 #ui-content::-webkit-scrollbar { width: 5px; }
 #ui-content::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
-
-#solveAI{
-    display: none;
-}
